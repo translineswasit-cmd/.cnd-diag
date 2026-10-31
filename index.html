@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<!-- CSP: الصفحة لا تستطيع الاتصال إلا بالمضيفين الاثنين أدناه، ولا تحمّل أي سكربت خارجي ولا تنفّذ ما تجلبه -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src https://cdnjs.cloudflare.com https://unpkg.com; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>فحص مكتبات التصدير</title>
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--tx:#1b2430;--mut:#667085;--ok:#0a7d3b;--bad:#b42318;--warn:#a15c00;--ln:#d9dee6;--btn:#2E4057}
+@media (prefers-color-scheme:dark){:root{--bg:#101418;--card:#1a2027;--tx:#e8edf3;--mut:#9aa6b2;--ok:#4cc27f;--bad:#ff7b6e;--warn:#f0b24a;--ln:#2d3640;--btn:#4b6a8f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.6 -apple-system,Tahoma,Arial,sans-serif;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+h1{font-size:1.15rem;margin:0 0 4px}p{margin:6px 0;color:var(--mut);font-size:.9rem}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:12px;padding:12px 14px;margin:12px 0}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:.9rem;padding:2px 0}.row b{font-weight:600}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+code{direction:ltr;unicode-bidi:plaintext;display:block;word-break:break-all;font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--bg);border-radius:8px;padding:6px 8px;margin:4px 0}
+button{font:inherit;font-weight:600;width:100%;padding:14px;border:0;border-radius:12px;background:var(--btn);color:#fff;margin:6px 0}button:disabled{opacity:.5}
+textarea{width:100%;height:150px;direction:ltr;font:12px ui-monospace,Menlo,monospace;background:var(--card);color:var(--tx);border:1px solid var(--ln);border-radius:8px}
+</style>
+</head>
+<body>
+<h1>فحص مكتبات التصدير (CORS + البصمة)</h1>
+<p>يجلب الروابط الأربعة المستخدمة في التطبيق ويحسب الحجم وبصمة SHA-256 داخل جهازك فقط. لا يُنفَّذ أي ملف ولا تُرسل النتائج لأي جهة.</p>
+<div class="card" id="env"></div>
+<button id="go">ابدأ الفحص</button>
+<div id="out"></div>
+<div class="card" id="sum" hidden></div>
+<button id="copy" disabled>نسخ النتائج</button>
+<textarea id="ta" readonly hidden></textarea>
+<script>
+'use strict';
+var LIBS=[
+ {n:'jsPDF 2.5.1',u:'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'},
+ {n:'XLSX 0.18.5',u:'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'},
+ {n:'ExcelJS 4.4.0',u:'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'},
+ {n:'docx 8.5.0',u:'https://unpkg.com/docx@8.5.0/build/index.js'}
+];
+var KNOWN_JSPDF='98ccf17aa10c20bb1301762618fcc9b6ab3a4e7f26b6071d64d0b41154df3875'; // الملف الذي رفعه المالك سابقاً (معلومة فقط)
+var TIMEOUT=+(new URLSearchParams(location.search).get('t'))||20000;
+var $=function(i){return document.getElementById(i)};
+var results=[],cspHits=[];
+document.addEventListener('securitypolicyviolation',function(e){cspHits.push(e.violatedDirective+' '+e.blockedURI)});
+function hex(b){return Array.prototype.map.call(new Uint8Array(b),function(x){return ('0'+x.toString(16)).slice(-2)}).join('')}
+function b64(b){var s='',u=new Uint8Array(b);for(var i=0;i<u.length;i++)s+=String.fromCharCode(u[i]);return btoa(s)}
+function esc(s){return String(s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
+function withTimeout(p,ms,ctl){return new Promise(function(res,rej){var t=setTimeout(function(){ctl.abort();rej(new Error('TIMEOUT'))},ms);p.then(function(v){clearTimeout(t);res(v)},function(e){clearTimeout(t);rej(e)})})}
+function errName(e){return e&&e.message==='TIMEOUT'?'TIMEOUT':(e&&e.name||'Error')}
+function env(){
+ var sw=!!(navigator.serviceWorker&&navigator.serviceWorker.controller);
+ var o={secure:window.isSecureContext,subtle:!!(window.crypto&&crypto.subtle),online:navigator.onLine,swControlled:sw,origin:location.origin+location.pathname,ua:navigator.userAgent};
+ $('env').innerHTML='<div class="row"><span>اتصال HTTPS آمن</span><b class="'+(o.secure?'ok':'bad')+'">'+(o.secure?'نعم':'لا')+'</b></div>'+
+  '<div class="row"><span>Web Crypto (SHA-256)</span><b class="'+(o.subtle?'ok':'bad')+'">'+(o.subtle?'متوفر':'غير متوفر')+'</b></div>'+
+  '<div class="row"><span>المتصفح يرى اتصالاً</span><b class="'+(o.online?'ok':'bad')+'">'+(o.online?'نعم':'لا')+'</b></div>'+
+  '<div class="row"><span>خاضعة لعامل خدمة (Service Worker)</span><b class="'+(sw?'warn':'ok')+'">'+(sw?'نعم - قد تتأثر النتائج':'لا')+'</b></div>';
+ return o;
+}
+async function probe(lib){
+ var r={name:lib.n,url:lib.u};var t0=performance.now();
+ var c1=new AbortController();
+ try{
+  var res=await withTimeout(fetch(lib.u,{mode:'cors',credentials:'omit',cache:'no-store',referrerPolicy:'no-referrer',signal:c1.signal}),TIMEOUT,c1);
+  r.status=res.status;r.ok=res.ok;r.type=res.type;r.contentType=res.headers.get('content-type')||'';
+  var buf=await withTimeout(res.arrayBuffer(),TIMEOUT,c1);
+  r.bytes=buf.byteLength;
+  if(window.crypto&&crypto.subtle){r.sha256=hex(await crypto.subtle.digest('SHA-256',buf));r.sha512b64=b64(await crypto.subtle.digest('SHA-512',buf))}
+  r.corsRead=res.ok;r.result=res.ok?'PASS':'HTTP_ERROR';
+ }catch(e){
+  r.corsRead=false;r.result='CORS_FETCH_FAILED';r.error=errName(e);
+  // اختبار تشخيصي إضافي: هل يصل الطلب أصلاً (بدون قراءة المحتوى)؟ استجابة opaque لا تكشف شيئاً ولا يُقرأ منها محتوى.
+  var c2=new AbortController();
+  try{await withTimeout(fetch(lib.u,{mode:'no-cors',credentials:'omit',cache:'no-store',referrerPolicy:'no-referrer',signal:c2.signal}),TIMEOUT,c2);r.noCorsReached=true}
+  catch(e2){r.noCorsReached=false;r.noCorsError=errName(e2)}
+ }
+ r.ms=Math.round(performance.now()-t0);
+ if(lib.n.indexOf('jsPDF')===0&&r.sha256)r.matchesOwnerSuppliedJsPDF=(r.sha256===KNOWN_JSPDF);
+ return r;
+}
+function verdict(r){
+ if(r.result==='PASS')return ['نجح: قُرئ الملف عبر CORS','ok'];
+ if(r.result==='HTTP_ERROR')return ['وصل الرد لكن الحالة '+r.status,'bad'];
+ if(r.error==='TIMEOUT')return ['انتهت المهلة - لا نتيجة قاطعة','warn'];
+ if(r.noCorsReached)return ['وصل الطلب لكن المتصفح لم يسمح بقراءة الرد عبر CORS. السبب غير مؤكد (قد يكون الخادم أو المتصفح أو حاجب محتوى)','warn'];
+ return ['لم يصل الطلب أصلاً (شبكة/حاجب/قيد على الصفحة). لا يمكن الحكم على CORS','bad'];
+}
+function render(r){
+ var v=verdict(r);
+ return '<div class="card"><b>'+esc(r.name)+'</b><code>'+esc(r.url)+'</code>'+
+ '<div class="row"><span>النتيجة</span><b class="'+v[1]+'">'+esc(v[0])+'</b></div>'+
+ (r.status!=null?'<div class="row"><span>HTTP</span><b>'+r.status+' ('+esc(r.type)+')</b></div>':'')+
+ (r.error?'<div class="row"><span>خطأ المتصفح</span><b>'+esc(r.error)+'</b></div>':'')+
+ (r.noCorsReached!=null?'<div class="row"><span>وصول بدون قراءة</span><b>'+(r.noCorsReached?'نعم':'لا')+'</b></div>':'')+
+ (r.bytes!=null?'<div class="row"><span>الحجم</span><b>'+r.bytes.toLocaleString('en')+' بايت</b></div>':'')+
+ (r.sha256?'<div class="row"><span>SHA-256</span></div><code>'+r.sha256+'</code>':'')+
+ (r.matchesOwnerSuppliedJsPDF!=null?'<div class="row"><span>يطابق ملف jsPDF المرفوع سابقاً</span><b class="'+(r.matchesOwnerSuppliedJsPDF?'ok':'warn')+'">'+(r.matchesOwnerSuppliedJsPDF?'نعم':'لا')+'</b></div>':'')+
+ '<div class="row"><span>الزمن</span><b>'+r.ms+' ms</b></div></div>';
+}
+function summary(){
+ var ok=results.filter(function(r){return r.result==='PASS'}).length,reach=results.filter(function(r){return r.result==='CORS_FETCH_FAILED'&&r.noCorsReached}).length,none=results.filter(function(r){return r.result==='CORS_FETCH_FAILED'&&!r.noCorsReached}).length;
+ var txt='نجح '+ok+' من 4 عبر CORS.';
+ if(reach)txt+=' '+reach+' وصلت دون السماح بالقراءة.';
+ if(none)txt+=' '+none+' لم تصل أصلاً.';
+ if(none===4&&!reach)txt+=' كل الطلبات الخارجية فشلت: يُرجَّح أن بيئة الفحص (شبكة أو حاجب محتوى أو قيد على الصفحة) تقيّد الاتصال؛ أعد المحاولة بشبكة أخرى أو بدون حاجب.';
+ else if(ok===4)txt+=' لم تظهر قيود على الطلبات الخارجية في هذه البيئة.';
+ if(cspHits.length)txt+=' (رُصدت مخالفات CSP: '+cspHits.length+')';
+ return txt;
+}
+$('go').onclick=async function(){
+ var b=$('go');b.disabled=true;b.textContent='جارٍ الفحص...';$('out').innerHTML='';results=[];var e=env();
+ for(var i=0;i<LIBS.length;i++){var r=await probe(LIBS[i]);results.push(r);$('out').insertAdjacentHTML('beforeend',render(r))}
+ $('sum').hidden=false;$('sum').textContent=summary();
+ var rep={tool:'P03-C2B cdn diagnostic',time:new Date().toISOString(),page:e.origin,secureContext:e.secure,subtleCrypto:e.subtle,onLine:e.online,swControlled:e.swControlled,ua:e.ua,timeoutMs:TIMEOUT,cspViolations:cspHits.slice(0,8),summary:summary(),results:results};
+ $('ta').value=JSON.stringify(rep,null,1);$('ta').hidden=false;$('copy').disabled=false;b.disabled=false;b.textContent='إعادة الفحص';
+};
+$('copy').onclick=function(){
+ var t=$('ta').value,done=function(m){$('copy').textContent=m;setTimeout(function(){$('copy').textContent='نسخ النتائج'},2500)};
+ var fb=function(){var a=$('ta');a.hidden=false;a.focus();a.select();a.setSelectionRange(0,a.value.length);try{done(document.execCommand('copy')?'تم النسخ':'حدّد النص وانسخه يدوياً')}catch(e){done('حدّد النص وانسخه يدوياً')}};
+ if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(function(){done('تم النسخ')},fb);else fb();
+};
+env();
+</script>
+</body>
+</html>
