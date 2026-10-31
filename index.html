@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<!-- CSP: الصفحة تتصل فقط بالمضيفات الأربعة أدناه، لا تحمّل سكربتًا خارجيًا، ولا تنفّذ ما تجلبه (لا script-src إلا السطر المضمَّن)، ولا تتصل بـ Supabase -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src https://cdnjs.cloudflare.com https://unpkg.com https://cdn.jsdelivr.net https://data.jsdelivr.com; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>تنزيل مكتبات التصدير</title>
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--tx:#1b2430;--mut:#667085;--ok:#0a7d3b;--bad:#b42318;--warn:#a15c00;--ln:#d9dee6;--btn:#2E4057}
+@media (prefers-color-scheme:dark){:root{--bg:#101418;--card:#1a2027;--tx:#e8edf3;--mut:#9aa6b2;--ok:#4cc27f;--bad:#ff7b6e;--warn:#f0b24a;--ln:#2d3640;--btn:#4b6a8f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.6 -apple-system,Tahoma,Arial,sans-serif;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+h1{font-size:1.15rem;margin:0 0 4px}h2{font-size:1rem;margin:0 0 6px}p{margin:6px 0;color:var(--mut);font-size:.9rem}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:12px;padding:12px 14px;margin:12px 0}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:.9rem;padding:2px 0}.row b{font-weight:600;text-align:left}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+code{direction:ltr;unicode-bidi:plaintext;display:block;word-break:break-all;font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--bg);border-radius:8px;padding:6px 8px;margin:4px 0}
+button{font:inherit;font-weight:600;width:100%;padding:14px;border:0;border-radius:12px;background:var(--btn);color:#fff;margin:6px 0}button:disabled{opacity:.45}button.sec{background:transparent;color:var(--btn);border:1px solid var(--btn)}
+.banner{border-radius:12px;padding:12px 14px;margin:12px 0;font-weight:700;border:2px solid}
+.banner.ok{border-color:var(--ok)}.banner.warn{border-color:var(--warn)}.banner.bad{border-color:var(--bad)}
+textarea{width:100%;height:150px;direction:ltr;font:12px ui-monospace,Menlo,monospace;background:var(--card);color:var(--tx);border:1px solid var(--ln);border-radius:8px}
+ol{padding-inline-start:20px;margin:6px 0;font-size:.92rem}li{margin:4px 0}
+</style>
+</head>
+<body>
+<h1>تنزيل مكتبات التصدير (للتخزين المحلي)</h1>
+<p>يجلب المكتبات الأربع، ويحسب الحجم وبصمة SHA-256 داخل جهازك، ويطابقها مع القيم المعروفة، ثم يعطيك ملف ZIP. لا يُنفَّذ أي ملف منزَّل أبدًا، ولا تُرسَل نتائجك لأي جهة، ولا علاقة له بتطبيق الإنتاج ولا بقاعدة البيانات.</p>
+<div class="card" id="env"></div>
+<div class="card">
+<h2>الخطوات</h2>
+<ol>
+<li>اتصل بالإنترنت (واي فاي أو بيانات) وأبقِ الصفحة مفتوحة.</li>
+<li>اضغط «ابدأ التنزيل والتحقق» وانتظر حتى تنتهي البطاقات الأربع (قد تستغرق دقيقة).</li>
+<li>إن ظهر الشريط الأخضر أو الأصفر اضغط «تنزيل ZIP» ثم «تنزيل» في نافذة Safari. تجد الملف في تطبيق «الملفات» ← «التنزيلات».</li>
+<li>إن تعذّر تنزيل الـZIP استخدم أزرار تنزيل كل ملف على حدة، أو «مشاركة» ثم «حفظ في الملفات».</li>
+<li>أرسل لي الملف مع زر «نسخ التقرير».</li>
+</ol></div>
+<button id="go">ابدأ التنزيل والتحقق</button>
+<div id="out"></div>
+<div id="banner" hidden></div>
+<div class="card" id="dl" hidden></div>
+<button id="copy" class="sec" disabled>نسخ التقرير</button>
+<textarea id="ta" readonly hidden></textarea>
+<script>
+'use strict';
+/* ===== القيم المعروفة (من فحص iPhone للمالك، P03-C2C) ===== */
+var PINS={
+ jspdf:{bytes:364463,sha256:'98ccf17aa10c20bb1301762618fcc9b6ab3a4e7f26b6071d64d0b41154df3875'},
+ xlsx:{bytes:881727,sha256:'c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99'},
+ excel:{bytes:947702,sha256:'7e49da68588e250dbb8bba190d2caa8ab3787cc0284bda1d8b2f805c4df742c9'}
+};
+var LIBS=[
+ {id:'jspdf',n:'jsPDF 2.5.1',file:'jspdf.umd.min.js',url:'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'},
+ {id:'xlsx',n:'XLSX 0.18.5',file:'xlsx.full.min.js',url:'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'},
+ {id:'excel',n:'ExcelJS 4.4.0',file:'exceljs.min.js',url:'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'}
+];
+var DOCX={n:'docx 8.5.0',file:'docx-8.5.0.build-index.js',
+ original:'https://unpkg.com/docx@8.5.0/build/index.js',
+ alt:'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js',
+ refJsd:'https://data.jsdelivr.com/v1/package/npm/docx@8.5.0/flat', refJsdName:'/build/index.js',
+ refUnpkg:'https://unpkg.com/docx@8.5.0/build/index.js?meta'};
+var TIMEOUT=+(new URLSearchParams(location.search).get('t'))||40000;
+var $=function(i){return document.getElementById(i)};
+var cspHits=[],state={files:[],report:null,zipBlob:null,zipName:null};
+document.addEventListener('securitypolicyviolation',function(e){cspHits.push(e.violatedDirective+' '+e.blockedURI)});
+/* ===== أدوات ===== */
+function hex(b){return Array.prototype.map.call(new Uint8Array(b),function(x){return ('0'+x.toString(16)).slice(-2)}).join('')}
+function b64(b){var s='',u=new Uint8Array(b);for(var i=0;i<u.length;i++)s+=String.fromCharCode(u[i]);return btoa(s)}
+function esc(s){return String(s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
+function withTimeout(p,ms,ctl){return new Promise(function(res,rej){var t=setTimeout(function(){ctl.abort();rej(new Error('TIMEOUT'))},ms);p.then(function(v){clearTimeout(t);res(v)},function(e){clearTimeout(t);rej(e)})})}
+function errName(e){return e&&e.message==='TIMEOUT'?'TIMEOUT':(e&&e.name||'Error')}
+async function digests(buf){return {sha256:hex(await crypto.subtle.digest('SHA-256',buf)),sha256b64:b64(await crypto.subtle.digest('SHA-256',buf)),sha384b64:b64(await crypto.subtle.digest('SHA-384',buf)),sha512b64:b64(await crypto.subtle.digest('SHA-512',buf))}}
+/* جلب بالبايتات فقط (ArrayBuffer). لا تُحوَّل إلى نص ولا تُنفَّذ ولا تُحقَن في الصفحة. */
+async function getBytes(url){
+ var r={url:url},t0=performance.now(),c=new AbortController();
+ try{
+  var res=await withTimeout(fetch(url,{mode:'cors',credentials:'omit',cache:'no-store',referrerPolicy:'no-referrer',signal:c.signal}),TIMEOUT,c);
+  r.status=res.status;r.ok=res.ok;r.type=res.type;
+  if(!res.ok){r.result='HTTP_ERROR'}
+  else{r.buf=await withTimeout(res.arrayBuffer(),TIMEOUT,c);r.bytes=r.buf.byteLength;Object.assign(r,await digests(r.buf));r.result='READ'}
+ }catch(e){r.result='CORS_FETCH_FAILED';r.error=errName(e)}
+ r.ms=Math.round(performance.now()-t0);return r;
+}
+/* مراجع الناشر: JSON فقط (يُحلَّل كبيانات ولا يُنفَّذ) */
+async function getJson(url){
+ var c=new AbortController(),r={url:url};
+ try{var res=await withTimeout(fetch(url,{mode:'cors',credentials:'omit',cache:'no-store',referrerPolicy:'no-referrer',signal:c.signal}),TIMEOUT,c);r.status=res.status;
+  if(!res.ok){r.result='HTTP_ERROR';return r}
+  r.json=JSON.parse(await withTimeout(res.text(),TIMEOUT,c));r.result='READ'}
+ catch(e){r.result='FAILED';r.error=errName(e)}
+ return r;
+}
+/* ===== ZIP (تخزين بلا ضغط، CRC32) — بلا أي مكتبة خارجية ===== */
+var CRC=(function(){var t=[],c,n,k;for(n=0;n<256;n++){c=n;for(k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+function crc32(u8){var c=0xFFFFFFFF;for(var i=0;i<u8.length;i++)c=CRC[(c^u8[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0}
+function u16(n){return [n&255,(n>>>8)&255]}function u32(n){return [n&255,(n>>>8)&255,(n>>>16)&255,(n>>>24)&255]}
+function makeZip(entries){ // entries: [{name, data:Uint8Array}]
+ var enc=new TextEncoder(),parts=[],central=[],off=0,d=new Date();
+ var dt=((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate(),tm=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1);
+ entries.forEach(function(e){
+  var nm=enc.encode(e.name),crc=crc32(e.data),sz=e.data.length;
+  var lh=new Uint8Array([].concat(u32(0x04034b50),u16(20),u16(0x0800),u16(0),u16(tm),u16(dt),u32(crc),u32(sz),u32(sz),u16(nm.length),u16(0)));
+  parts.push(lh,nm,e.data);
+  central.push(new Uint8Array([].concat(u32(0x02014b50),u16(20),u16(20),u16(0x0800),u16(0),u16(tm),u16(dt),u32(crc),u32(sz),u32(sz),u16(nm.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(off))),nm);
+  off+=lh.length+nm.length+sz;
+ });
+ var cs=0;central.forEach(function(c){cs+=c.length});
+ var end=new Uint8Array([].concat(u32(0x06054b50),u16(0),u16(0),u16(entries.length),u16(entries.length),u32(cs),u32(off),u16(0)));
+ return new Blob(parts.concat(central,[end]),{type:'application/octet-stream'});
+}
+/* ===== البيئة ===== */
+function env(){
+ var o={secure:window.isSecureContext,subtle:!!(window.crypto&&crypto.subtle),online:navigator.onLine,blob:!!(window.Blob&&window.URL&&URL.createObjectURL),share:!!(navigator.canShare&&navigator.share),origin:location.origin+location.pathname,ua:navigator.userAgent};
+ function row(t,v,ok){return '<div class="row"><span>'+t+'</span><b class="'+(ok?'ok':'bad')+'">'+v+'</b></div>'}
+ $('env').innerHTML=row('اتصال HTTPS آمن',o.secure?'نعم':'لا',o.secure)+row('Web Crypto (SHA-256)',o.subtle?'متوفر':'غير متوفر',o.subtle)+row('تنزيل الملفات من الصفحة',o.blob?'متوفر':'غير متوفر',o.blob)+row('المشاركة المباشرة للملف',o.share?'متوفرة':'غير متوفرة (عادي)',true);
+ return o;
+}
+/* ===== العرض ===== */
+function card(l){
+ var h='<div class="card"><b>'+esc(l.n)+'</b>';
+ (l.urls||[]).forEach(function(u){h+='<code>'+esc(u)+'</code>'});
+ (l.rows||[]).forEach(function(r){h+='<div class="row"><span>'+esc(r[0])+'</span><b class="'+(r[2]||'')+'">'+esc(r[1])+'</b></div>'});
+ (l.hashes||[]).forEach(function(x){h+='<div class="row"><span>'+esc(x[0])+'</span></div><code>'+esc(x[1])+'</code>'});
+ return h+'</div>';
+}
+function setCard(id,html){var e=$('c_'+id);if(!e){$('out').insertAdjacentHTML('beforeend','<div id="c_'+id+'"></div>');e=$('c_'+id)}e.innerHTML=html}
+/* ===== التحقق ===== */
+async function doPinned(l){
+ setCard(l.id,card({n:l.n,urls:[l.url],rows:[['الحالة','جارٍ التنزيل…','warn']]}));
+ var r=await getBytes(l.url),pin=PINS[l.id],rows=[],hashes=[];
+ var out={id:l.id,name:l.n,file:l.file,source_url:l.url,source_class:'original-url',pinned_bytes:pin.bytes,pinned_sha256:pin.sha256,result:r.result,status:r.status,error:r.error};
+ if(r.result==='READ'){
+  out.bytes=r.bytes;out.sha256=r.sha256;out.sizeMatch=r.bytes===pin.bytes;out.hashMatch=r.sha256===pin.sha256;out.verified=out.sizeMatch&&out.hashMatch;out.buf=r.buf;
+  out.verification=out.verified?'size+sha256 match owner iPhone diagnostic (P03-C2C)':'MISMATCH';
+  rows.push(['الحجم',r.bytes.toLocaleString('en')+' بايت (المتوقع '+pin.bytes.toLocaleString('en')+')',out.sizeMatch?'ok':'bad']);
+  rows.push(['البصمة',out.hashMatch?'مطابقة':'غير مطابقة',out.hashMatch?'ok':'bad']);hashes.push(['SHA-256',r.sha256]);
+  rows.push(['النتيجة',out.verified?'✔ تم التحقق (الملف الأصلي المعروف)':'✘ غير متحقق منه — لن يُضمَّن في الـZIP',out.verified?'ok':'bad']);
+ }else rows.push(['النتيجة','✘ فشل التنزيل ('+(r.error||('HTTP '+r.status))+')','bad']);
+ setCard(l.id,card({n:l.n,urls:[l.url],rows:rows,hashes:hashes}));return out;
+}
+async function doDocx(){
+ setCard('docx',card({n:DOCX.n,urls:[DOCX.original,DOCX.alt],rows:[['الحالة','جارٍ المحاولة…','warn']]}));
+ var U=await getBytes(DOCX.original),J=await getBytes(DOCX.alt),RJ=await getJson(DOCX.refJsd),RM=await getJson(DOCX.refUnpkg);
+ var ref={jsdelivr:null,unpkgMeta:null};
+ if(RJ.result==='READ'&&RJ.json&&Array.isArray(RJ.json.files)){var f=RJ.json.files.filter(function(x){return x&&x.name===DOCX.refJsdName})[0];if(f)ref.jsdelivr={sha256b64:f.hash,size:f.size}}
+ if(RM.result==='READ'&&RM.json&&typeof RM.json.integrity==='string'){var m=/^sha384-(.+)$/.exec(RM.json.integrity);if(m)ref.unpkgMeta={sha384b64:m[1],size:RM.json.size}}
+ function chk(x){ // يرجع قائمة المراجع التي طابقها هذا الملف
+  var hit=[];if(x.result!=='READ')return hit;
+  if(ref.jsdelivr&&ref.jsdelivr.sha256b64===x.sha256b64&&(ref.jsdelivr.size==null||ref.jsdelivr.size===x.bytes))hit.push('jsDelivr index');
+  if(ref.unpkgMeta&&ref.unpkgMeta.sha384b64===x.sha384b64&&(ref.unpkgMeta.size==null||ref.unpkgMeta.size===x.bytes))hit.push('unpkg metadata');
+  return hit;
+ }
+ var uHit=chk(U),jHit=chk(J),chosen=null,cls=null,level='none';
+ if(U.result==='READ'&&uHit.length){chosen=U;cls='original-url';level='strong'}
+ else if(J.result==='READ'&&jHit.length){chosen=J;cls='alternate-source-same-npm-package';level=(jHit.indexOf('unpkg metadata')>=0)?'strong':'partial'}
+ var out={id:'docx',name:DOCX.n,file:DOCX.file,original_url:DOCX.original,alt_url:DOCX.alt,
+  original_fetch:{result:U.result,error:U.error,status:U.status,bytes:U.bytes,sha256:U.sha256},
+  alt_fetch:{result:J.result,error:J.error,status:J.status,bytes:J.bytes,sha256:J.sha256},
+  sources_identical:(U.result==='READ'&&J.result==='READ')?U.sha256===J.sha256:null,
+  references:{jsdelivr_index:ref.jsdelivr?{fetched:true,sha256_base64:ref.jsdelivr.sha256b64,size:ref.jsdelivr.size}:{fetched:false,why:RJ.result+(RJ.error?' '+RJ.error:'')+(RJ.status?' HTTP '+RJ.status:'')},
+   unpkg_meta:ref.unpkgMeta?{fetched:true,integrity_sha384_base64:ref.unpkgMeta.sha384b64,size:ref.unpkgMeta.size}:{fetched:false,why:RM.result+(RM.error?' '+RM.error:'')+(RM.status?' HTTP '+RM.status:'')}},
+  verified:!!chosen,verification_level:level};
+ var rows=[],hashes=[];
+ rows.push(['الرابط الأصلي (unpkg)',U.result==='READ'?'قُرئ ('+U.bytes.toLocaleString('en')+' بايت)':'لم يُقرأ ('+(U.error||('HTTP '+U.status))+')',U.result==='READ'?'ok':'warn']);
+ rows.push(['المصدر البديل (jsDelivr، نفس حزمة npm docx@8.5.0)',J.result==='READ'?'قُرئ ('+J.bytes.toLocaleString('en')+' بايت)':'لم يُقرأ ('+(J.error||('HTTP '+J.status))+')',J.result==='READ'?'ok':'warn']);
+ rows.push(['مرجع بصمة jsDelivr',ref.jsdelivr?'متوفر':'غير متوفر',ref.jsdelivr?'ok':'warn']);
+ rows.push(['مرجع بصمة unpkg (?meta)',ref.unpkgMeta?'متوفر':'غير متوفر',ref.unpkgMeta?'ok':'warn']);
+ if(out.sources_identical!==null)rows.push(['المصدران متطابقان',out.sources_identical?'نعم':'لا',out.sources_identical?'ok':'bad']);
+ var any=U.result==='READ'?U:(J.result==='READ'?J:null);if(any){hashes.push(['SHA-256 ('+(any===U?'unpkg':'jsDelivr')+')',any.sha256])}
+ if(chosen){
+  out.bytes=chosen.bytes;out.sha256=chosen.sha256;out.source_url=chosen===U?DOCX.original:DOCX.alt;out.source_class=cls;out.buf=chosen.buf;
+  out.verification='matches '+(chosen===U?uHit:jHit).join(' + ');
+  if(level==='strong')rows.push(['النتيجة','✔ تم التحقق بمرجع الناشر ('+(chosen===U?uHit:jHit).join(' + ')+')'+(cls==='original-url'?' — من الرابط الأصلي':''),'ok']);
+  else rows.push(['النتيجة','◐ تحقق جزئي: الملف من jsDelivr ويطابق فهرس jsDelivr نفسه فقط. هذا يكشف التلف أثناء النقل لكنه لا يثبت أنه مطابق بالبايت لما يقدّمه unpkg. لم يُختبر هذا الملف سابقًا على iPhone.','warn']);
+ }else{
+  rows.push(['النتيجة','✘ لا يوجد ملف docx متحقق منه — لن يُضمَّن في الـZIP. لا يُعتبر أي ملف غير متحقق منه أصليًا.','bad']);
+ }
+ setCard('docx',card({n:DOCX.n,urls:[DOCX.original,DOCX.alt],rows:rows,hashes:hashes}));return out;
+}
+/* ===== التجميع ===== */
+function enc(s){return new TextEncoder().encode(s)}
+async function build(results,e){
+ var ver=results.filter(function(r){return r.verified&&r.buf});
+ var missing=results.filter(function(r){return !(r.verified&&r.buf)}).map(function(r){return r.name});
+ var complete=missing.length===0,caveats=[];
+ var dx=results.filter(function(r){return r.id==='docx'})[0];
+ if(dx&&dx.verified&&dx.verification_level==='partial')caveats.push('docx: تحقق جزئي (مصدر بديل مقابل فهرس الناشر فقط)');
+ var manifest={tool:'P03-C3 export libs download',created_utc:new Date().toISOString(),page:e.origin,user_agent:e.ua,complete:complete,incomplete_missing:missing,caveats:caveats,
+  note:'No file was executed. Bytes were stored as fetched. Only files that passed verification are included.',
+  files:ver.map(function(r){return {name:r.file,library:r.name,bytes:r.bytes,sha256:r.sha256,source_url:r.source_url,source_class:r.source_class,verification:r.verification,verification_level:r.verification_level||'pinned-owner-diagnostic'}}),
+  docx_detail:dx?{original_fetch:dx.original_fetch,alt_fetch:dx.alt_fetch,sources_identical:dx.sources_identical,references:dx.references,verification_level:dx.verification_level}:null};
+ var entries=ver.map(function(r){return {name:r.file,data:new Uint8Array(r.buf)}});
+ entries.push({name:'manifest.json',data:enc(JSON.stringify(manifest,null,1))});
+ var sums=ver.map(function(r){return r.sha256+'  '+r.file}).join('\n')+'\n';entries.push({name:'SHA256SUMS.txt',data:enc(sums)});
+ if(!complete)entries.push({name:'INCOMPLETE.txt',data:enc('INCOMPLETE: this ZIP does not contain all four libraries. Missing/unverified: '+missing.join(', ')+'\n')});
+ var name=complete?'Tower_export_libs_4of4.zip':'Tower_export_libs_PARTIAL_'+ver.length+'of4_INCOMPLETE.zip';
+ return {manifest:manifest,zip:makeZip(entries),name:name,complete:complete,ver:ver,missing:missing,caveats:caveats};
+}
+function save(blob,name){var a=document.createElement('a'),u=URL.createObjectURL(blob);a.href=u;a.download=name;a.rel='noopener';document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(u)},60000)}
+async function share(blob,name){try{var f=new File([blob],name,{type:'application/octet-stream'});if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:name});return true}}catch(e){}return false}
+function showResult(b){
+ var cls=b.complete&&!b.caveats.length?'ok':'warn';
+ var msg=b.complete?(b.caveats.length?'اكتملت الملفات الأربعة، مع تنبيه: '+b.caveats.join('؛ '):'اكتملت الملفات الأربعة وتم التحقق منها'):'غير مكتمل: '+b.ver.length+' من 4 فقط. الناقص/غير المتحقق منه: '+b.missing.join('، ')+'. الـZIP موسوم «INCOMPLETE».';
+ $('banner').className='banner '+cls;$('banner').textContent=msg;$('banner').hidden=false;
+ if(!b.ver.length){$('banner').className='banner bad';$('banner').textContent='لم يُتحقق من أي ملف — لا يوجد ما يُنزَّل. أعد المحاولة بشبكة أخرى وأبلغني بالتقرير.';$('dl').hidden=true;return}
+ var h='<h2>التنزيل</h2><button id="dZip">تنزيل '+esc(b.name)+'</button>'+(navigator.canShare&&navigator.share?'<button id="dShare" class="sec">مشاركة الـZIP / حفظ في الملفات</button>':'')+'<p>أو كل ملف على حدة (متحقق منه فقط):</p>';
+ b.ver.forEach(function(r,i){h+='<button class="sec" data-i="'+i+'">تنزيل '+esc(r.file)+'</button>'});
+ $('dl').innerHTML=h;$('dl').hidden=false;
+ $('dZip').onclick=function(){save(b.zip,b.name)};
+ if($('dShare'))$('dShare').onclick=function(){share(b.zip,b.name).then(function(ok){if(!ok)$('dShare').textContent='المشاركة غير متاحة — استخدم زر التنزيل'})};
+ Array.prototype.forEach.call($('dl').querySelectorAll('button[data-i]'),function(btn){btn.onclick=function(){var r=b.ver[+btn.getAttribute('data-i')];save(new Blob([r.buf],{type:'application/octet-stream'}),r.file)}});
+}
+$('go').onclick=async function(){
+ var b=$('go');b.disabled=true;b.textContent='جارٍ التنزيل والتحقق…';$('out').innerHTML='';$('banner').hidden=true;$('dl').hidden=true;
+ var e=env(),results=[];
+ if(!(e.secure&&e.subtle&&e.blob)){$('banner').className='banner bad';$('banner').textContent='هذه البيئة لا تدعم المطلوب (HTTPS/Web Crypto/التنزيل). افتح الصفحة عبر رابط HTTPS في Safari.';$('banner').hidden=false;b.disabled=false;b.textContent='إعادة المحاولة';return}
+ for(var i=0;i<LIBS.length;i++)results.push(await doPinned(LIBS[i]));
+ results.push(await doDocx());
+ var bd=await build(results,e);state.built=bd;showResult(bd);
+ var rep={tool:'P03-C3 export libs download',time:new Date().toISOString(),page:e.origin,ua:e.ua,cspViolations:cspHits,zipName:bd.name,complete:bd.complete,zipBytes:bd.zip.size,manifest:bd.manifest};
+ $('ta').value=JSON.stringify(rep,null,1);$('ta').hidden=false;$('copy').disabled=false;b.disabled=false;b.textContent='إعادة التنزيل والتحقق';
+};
+$('copy').onclick=function(){
+ var t=$('ta').value,done=function(m){$('copy').textContent=m;setTimeout(function(){$('copy').textContent='نسخ التقرير'},2500)};
+ var fb=function(){var a=$('ta');a.hidden=false;a.focus();a.select();a.setSelectionRange(0,a.value.length);try{done(document.execCommand('copy')?'تم النسخ':'حدّد النص وانسخه يدوياً')}catch(e){done('حدّد النص وانسخه يدوياً')}};
+ if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(function(){done('تم النسخ')},fb);else fb();
+};
+env();
+</script>
+</body>
+</html>
